@@ -1,0 +1,5 @@
+content_pipeline
+*.exe
+.env
+conf/app.conf
+*.log
