@@ -13,8 +13,8 @@ type Job struct {
 }
 
 type JobData struct {
-	SiteURL     string     `json:"site_url"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Properties  []Property `json:"properties"`
+	SiteURL     string   `json:"site_url"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Properties  []string `json:"properties"`
 }

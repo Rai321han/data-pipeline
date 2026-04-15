@@ -3,43 +3,42 @@ package services
 import (
 	"bytes"
 	"content_pipeline/models"
+	"content_pipeline/pkg/geminiai"
 	"content_pipeline/pkg/minio"
 	"encoding/csv"
-	"encoding/json"
 	"errors"
 	"io"
+	"sync"
+
+	beego "github.com/beego/beego/v2/server/web"
 )
 
 type JobService struct{}
 
-func (s *JobService) CreateJob(title, description, siteUrl string, fileBytes []byte) error {
-	reader := csv.NewReader(bytes.NewReader(fileBytes))
-	if _, err := reader.Read(); err != nil {
-		return err
+func (s *JobService) ProcessJob(title, description, siteUrl string, fileBytes []byte) (string, error) {
+	bucket, err := beego.AppConfig.String("app::bucket_name")
+
+	if err != nil || bucket == "" {
+		return "", errors.New("bucket name is not configured")
 	}
 
-	properties := make([]models.Property, 0, 16)
+	reader := csv.NewReader(bytes.NewReader(fileBytes))
+	if _, err := reader.Read(); err != nil {
+		return "", err
+	}
+
+	properties := []string{}
 	for {
 		record, err := reader.Read()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return err
+			return "", err
 		}
 
-		properties = append(properties, models.Property{
-			ID:          record[0],
-			Title:       record[1],
-			Description: record[2],
-		})
+		properties = append(properties, record[0])
 	}
-
-	propertiesJSON, err := json.Marshal(properties)
-	if err != nil {
-		return err
-	}
-	_ = propertiesJSON
 
 	storageService := NewStorageService(minio.MinioClient)
 
@@ -52,10 +51,59 @@ func (s *JobService) CreateJob(title, description, siteUrl string, fileBytes []b
 		Properties:  properties,
 	}
 
-	err = storageService.UploadJSON("rebrand-content", inputPath, data)
+	err = storageService.UploadJSON(bucket, inputPath, data)
 
 	if err != nil {
-		return err
+		return "", err
 	}
-	return nil
+
+	model := beego.AppConfig.DefaultString("app::model", "gemini-2.5-flash-lite")
+	llm := NewLLMService(geminiai.Genaiclient, model)
+
+	seoResponse, err := llm.GenerateSEO(title, description)
+
+	if err != nil {
+		return "", err
+	}
+
+	outputPath := storageService.BuildOutputPath(siteUrl)
+
+	err = storageService.UploadJSON(bucket, outputPath, seoResponse)
+
+	if err != nil {
+		return "", err
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(properties))
+
+	for _, propertyID := range properties {
+		wg.Add(1)
+
+		go func(propertyID string) {
+			defer wg.Done()
+
+			artifactPath := storageService.BuildArtifactPath(siteUrl, propertyID)
+			artifactData := map[string]string{
+				"id":          propertyID,
+				"title":       seoResponse.Title,
+				"description": seoResponse.Description,
+			}
+
+			if err := storageService.UploadJSON(bucket, artifactPath, artifactData); err != nil {
+				errCh <- err
+			}
+		}(propertyID)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			return "", err
+		}
+	}
+
+	return inputPath, nil
 }

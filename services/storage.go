@@ -70,6 +70,5 @@ func (s *storageService) BuildOutputPath(siteURL string) string {
 }
 
 func (s *storageService) BuildArtifactPath(siteURL, id string) string {
-	// Implementation for building artifact path based on site URL and ID
 	return fmt.Sprintf("%s/details/%s.json", siteURL, id)
 }
