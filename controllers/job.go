@@ -55,17 +55,18 @@ func (c *JobController) CreateJob() {
 	defer file.Close()
 
 	jobService := services.JobService{}
-	err = jobService.CreateJob(title, description, siteUrl, fileBytes)
+	inputPath, err := jobService.ProcessJob(title, description, siteUrl, fileBytes)
 
 	if err != nil {
 		c.Ctx.Output.SetStatus(500)
-		c.Data["json"] = map[string]string{"error": "failed to create job"}
+		c.Data["json"] = map[string]string{"error": "failed to process job"}
 		c.ServeJSON()
 		return
 	}
 
-	c.Data["json"] = map[string]interface{}{
-		"message": "job created successfully",
+	c.Data["json"] = map[string]any{
+		"message": "job processed successfully",
+		"path":    inputPath,
 	}
 	c.ServeJSON()
 }
