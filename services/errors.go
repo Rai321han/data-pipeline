@@ -21,6 +21,8 @@ type ServiceError struct {
 	Err      error
 }
 
+// NewServiceError creates a new ServiceError with the given sentinel error, code, message, and underlying error.
+// The sentinel error is used for error comparison and can be one of the predefined errors like ErrValidation, ErrConfiguration, etc.
 func NewServiceError(sentinel error, code, message string, err error) *ServiceError {
 	return &ServiceError{
 		sentinel: sentinel,
