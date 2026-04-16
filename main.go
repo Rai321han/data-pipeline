@@ -6,6 +6,7 @@ import (
 	_ "content_pipeline/routers"
 
 	beego "github.com/beego/beego/v2/server/web"
+	"github.com/beego/beego/v2/server/web/filter/cors"
 )
 
 func main() {
@@ -46,5 +47,25 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	beego.InsertFilter("*", beego.BeforeRouter, cors.Allow(&cors.Options{
+		AllowOrigins: []string{
+			"http://localhost:5174", // your React dev server
+		},
+		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders: []string{
+			"Origin",
+			"Authorization",
+			"Access-Control-Allow-Origin",
+			"Content-Type",
+		},
+		ExposeHeaders: []string{
+			"Content-Length",
+			"Access-Control-Allow-Origin",
+			"Access-Control-Allow-Headers",
+		},
+		AllowCredentials: true,
+	}))
+
 	beego.Run()
 }
