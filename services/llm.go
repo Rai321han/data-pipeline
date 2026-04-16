@@ -2,8 +2,6 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -44,12 +42,12 @@ func (s *LLMService) GenerateRawSEO(titlePrompt, descriptionPrompt string) (RawS
 
 	rawTitle, err := s.generate(ctx, titlePrompt)
 	if err != nil {
-		return RawSEOOutput{}, fmt.Errorf("title generation failed: %w", err)
+		return RawSEOOutput{}, NewServiceError(ErrLLM, "TITLE_GENERATION_FAILED", "title generation failed", err)
 	}
 
 	rawDescription, err := s.generate(ctx, descriptionPrompt)
 	if err != nil {
-		return RawSEOOutput{}, fmt.Errorf("description generation failed: %w", err)
+		return RawSEOOutput{}, NewServiceError(ErrLLM, "DESCRIPTION_GENERATION_FAILED", "description generation failed", err)
 	}
 
 	return RawSEOOutput{
@@ -73,11 +71,11 @@ func (s *LLMService) generate(ctx context.Context, prompt string) (string, error
 
 	resp, err := s.client.CreateChatCompletion(ctx, req)
 	if err != nil {
-		return "", err
+		return "", NewServiceError(ErrLLM, "LLM_REQUEST_FAILED", "llm request failed", err)
 	}
 
 	if len(resp.Choices) == 0 {
-		return "", errors.New("no choices returned from model")
+		return "", NewServiceError(ErrLLM, "EMPTY_LLM_RESPONSE", "no choices returned from model", nil)
 	}
 
 	return resp.Choices[0].Message.Content, nil
@@ -88,10 +86,10 @@ func (s *LLMService) ProcessRawSEO(raw RawSEOOutput) (SEOResponse, error) {
 	description := normalizeParagraph(strings.TrimSpace(raw.RawDescription))
 
 	if title == "" {
-		return SEOResponse{}, errors.New("processed title is empty")
+		return SEOResponse{}, NewServiceError(ErrProcessing, "EMPTY_PROCESSED_TITLE", "processed title is empty", nil)
 	}
 	if description == "" {
-		return SEOResponse{}, errors.New("processed description is empty")
+		return SEOResponse{}, NewServiceError(ErrProcessing, "EMPTY_PROCESSED_DESCRIPTION", "processed description is empty", nil)
 	}
 
 	return SEOResponse{
