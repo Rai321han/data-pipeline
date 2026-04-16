@@ -2,11 +2,11 @@ package services
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"strings"
 
-	"google.golang.org/genai"
+	openai "github.com/sashabaranov/go-openai"
 )
 
 type SEOResponse struct {
@@ -14,59 +14,111 @@ type SEOResponse struct {
 	Description string `json:"description"`
 }
 
-type LLMService struct {
-	client *genai.Client
-	model  string
+type RawSEOOutput struct {
+	RawTitle       string `json:"raw_title"`
+	RawDescription string `json:"raw_description"`
 }
 
-func NewLLMService(client *genai.Client, model string) *LLMService {
+type LLMConfig struct {
+	Temperature     float32
+	MaxOutputTokens int
+	TopP            float32
+}
+
+type LLMService struct {
+	client *openai.Client
+	model  string
+	config LLMConfig
+}
+
+func NewLLMService(client *openai.Client, model string, cfg LLMConfig) *LLMService {
 	return &LLMService{
 		client: client,
 		model:  model,
+		config: cfg,
 	}
 }
 
-func (s *LLMService) GenerateSEO(title, description string) (SEOResponse, error) {
+func (s *LLMService) GenerateRawSEO(titlePrompt, descriptionPrompt string) (RawSEOOutput, error) {
 	ctx := context.Background()
 
-	prompt := fmt.Sprintf(`
-You are an expert travel blogger who creates content for high-performing travel accommodation, event, and activity booking websites that are search engine optimized. Rephrase the  "%s" title into a more SEO-friendly title. Use only the provided data without introducing new information or assumptions. The output should be in plain text. The text should be SEO-optimized for keywords related to the location. Write the sentences subtly, so that the keyword has the highest NLP Salience Score. Incorporate the location naturally within the content. Use pronouns or alternative references when the location has been established.
-You are an expert travel blogger who creates content for high-performing travel accommodation, event and activity booking websites that are search engine optimized. Rephrase the following activity description "%s" into a more SEO-friendly and engaging paragraph by emphasizing key experiences, unique features, and specific location highlights to attract potential guests and improve online discoverability. Use only the content provided in the given description without adding new details or assumptions. The output should be in HTML markup. The text must contain exactly ONE HTML paragraph. Wrap the entire content inside a single <p>...</p> tag. Do not include any text or HTML elements outside this one <p> tag. The text should be SEO optimized towards the keywords: relating to the location. Write the sentences subtly, so that the keyword has the highest NLP Salience Score. Incorporate the location naturally within the content. Use pronouns or alternative references when the location has been established.
-  `, title, description)
-	config := &genai.GenerateContentConfig{
-		ResponseMIMEType: "application/json",
-		ResponseJsonSchema: map[string]any{
-			"type": "object",
-			"properties": map[string]any{
-				"title": map[string]any{
-					"type":        "string",
-					"description": "SEO optimized title",
-				},
-				"description": map[string]any{
-					"type":        "string",
-					"description": "SEO optimized description wrapped in a single HTML paragraph tag",
-				},
+	rawTitle, err := s.generate(ctx, titlePrompt)
+	if err != nil {
+		return RawSEOOutput{}, fmt.Errorf("title generation failed: %w", err)
+	}
+
+	rawDescription, err := s.generate(ctx, descriptionPrompt)
+	if err != nil {
+		return RawSEOOutput{}, fmt.Errorf("description generation failed: %w", err)
+	}
+
+	return RawSEOOutput{
+		RawTitle:       rawTitle,
+		RawDescription: rawDescription,
+	}, nil
+}
+
+func (s *LLMService) generate(ctx context.Context, prompt string) (string, error) {
+	req := openai.ChatCompletionRequest{
+		Model: s.model,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: prompt,
 			},
-			"required": []string{"title", "description"},
 		},
+		Temperature: s.config.Temperature,
+		MaxTokens:   s.config.MaxOutputTokens,
 	}
 
-	result, err := s.client.Models.GenerateContent(
-		ctx,
-		s.model,
-		genai.Text(prompt),
-		config,
-	)
+	resp, err := s.client.CreateChatCompletion(ctx, req)
 	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(result.Text())
-
-	var seo SEOResponse
-	err = json.Unmarshal([]byte(result.Text()), &seo)
-	if err != nil {
-		return SEOResponse{}, err
+		return "", err
 	}
 
-	return seo, nil
+	if len(resp.Choices) == 0 {
+		return "", errors.New("no choices returned from model")
+	}
+
+	return resp.Choices[0].Message.Content, nil
+}
+
+func (s *LLMService) ProcessRawSEO(raw RawSEOOutput) (SEOResponse, error) {
+	title := stripHTML(strings.TrimSpace(raw.RawTitle))
+	description := normalizeParagraph(strings.TrimSpace(raw.RawDescription))
+
+	if title == "" {
+		return SEOResponse{}, errors.New("processed title is empty")
+	}
+	if description == "" {
+		return SEOResponse{}, errors.New("processed description is empty")
+	}
+
+	return SEOResponse{
+		Title:       title,
+		Description: description,
+	}, nil
+}
+
+func stripHTML(s string) string {
+	var result strings.Builder
+	inTag := false
+	for _, r := range s {
+		if r == '<' {
+			inTag = true
+		} else if r == '>' {
+			inTag = false
+		} else if !inTag {
+			result.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(result.String())
+}
+
+func normalizeParagraph(s string) string {
+	s = strings.TrimSpace(s)
+	if strings.HasPrefix(s, "<p>") && strings.HasSuffix(s, "</p>") {
+		s = s[3 : len(s)-4]
+	}
+	return "<p>" + strings.TrimSpace(s) + "</p>"
 }

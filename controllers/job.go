@@ -15,8 +15,8 @@ type JobController struct {
 //
 // Request Parameters:
 //
-//	@param title formData string true "The title of the job"
-//	@param description formData string true "A brief description of the job"
+//	@param title formData string true "A prompt for optimizing a title"
+//	@param description formData string true "A prompt for optimizing a description"
 //	@param site formData string true "The URL of the site to be processed"
 //	@param file formData file true "The CSV file containing the data for the job"
 func (c *JobController) CreateJob() {
@@ -55,7 +55,8 @@ func (c *JobController) CreateJob() {
 	defer file.Close()
 
 	jobService := services.JobService{}
-	inputPath, err := jobService.ProcessJob(title, description, siteUrl, fileBytes)
+	ctx := c.Ctx.Request.Context()
+	inputPath, err := jobService.ProcessJob(ctx, title, description, siteUrl, fileBytes)
 
 	if err != nil {
 		c.Ctx.Output.SetStatus(500)
