@@ -96,7 +96,6 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 		go func(prop map[string]string) {
 			defer wg.Done()
 
-			// Generate SEO content using the interpolated prompts
 			rawOutput, err := llm.GenerateRawSEO(prop["title"], prop["description"])
 			if err != nil {
 				errCh <- NewServiceError(ErrLLM, "RAW_SEO_GENERATION_FAILED", fmt.Sprintf("raw seo generation failed for id=%s", prop["id"]), err)
@@ -110,7 +109,6 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 			}
 			outputPath := storageService.BuildOutputPath(siteUrl)
 
-			// add id to the rawoutput for easier debugging
 			var rawMap map[string]any
 			if err := json.Unmarshal(rawBytes, &rawMap); err != nil {
 				errCh <- NewServiceError(ErrSerialization, "RAW_OUTPUT_UNMARSHAL_FAILED", "failed to decode raw llm output", err)
@@ -123,20 +121,17 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 				return
 			}
 
-			// Step 1: save raw LLM output for debugging
 			if err := storageService.Upload(ctx, bucket, outputPath, rawBytes); err != nil {
 				errCh <- NewServiceError(ErrStorage, "RAW_OUTPUT_UPLOAD_FAILED", "failed to upload raw llm output", err)
 				return
 			}
 
-			// Step 2: process raw output into clean SEO content
 			seoResponse, err := llm.ProcessRawSEO(rawOutput)
 			if err != nil {
 				errCh <- NewServiceError(ErrProcessing, "RAW_SEO_PROCESSING_FAILED", fmt.Sprintf("processing raw seo failed for id=%s", prop["id"]), err)
 				return
 			}
 
-			// Step 3: save artifact
 			artifactData := map[string]string{
 				"id":          prop["id"],
 				"title":       seoResponse.Title,

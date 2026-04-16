@@ -4,6 +4,9 @@
 
 Content Pipeline is a Go service built with Beego for generating SEO-ready property content from CSV uploads. It accepts a multipart job request, expands prompt templates with property data, sends the prompts to Groq, and stores the generated input, raw output, and final artifacts in S3-compatible storage such as MinIO.
 
+The frontend project that interacts with this service is available at:
+[content-generation-app](https://github.com/Rai321han/content-generation-app)
+
 ## Contents
 
 - [About the Project](#about-the-project)
