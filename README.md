@@ -181,13 +181,7 @@ curl -X POST http://localhost:8080/api/v1/job \
 ```
 
 Success response:
-
-```json
-{
-  "message": "job processed successfully",
-  "path": "example-site/details/input/input.json"
-}
-```
+No content, HTTP status `204 No Content`
 
 ## CSV Format
 
