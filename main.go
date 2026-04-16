@@ -48,9 +48,14 @@ func main() {
 		panic(err)
 	}
 
+	frontendURL, err := beego.AppConfig.String("app::frontend_url")
+	if err != nil || frontendURL == "" {
+		frontendURL = "http://localhost:3000" // default to localhost if not configured
+	}
+
 	beego.InsertFilter("*", beego.BeforeRouter, cors.Allow(&cors.Options{
 		AllowOrigins: []string{
-			"http://localhost:5174", // your React dev server
+			frontendURL, // your React dev server
 		},
 		AllowMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders: []string{

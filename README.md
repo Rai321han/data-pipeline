@@ -118,6 +118,7 @@ Update the values in `conf/app.conf` as needed:
 - `groq_base_url`: Groq OpenAI-compatible base URL
 - `temperature`: model temperature
 - `max_output_tokens`: maximum tokens for generated output
+- `frontend_url`: URL of the frontend application for CORS configuration
 
 ### Docker Compose
 
