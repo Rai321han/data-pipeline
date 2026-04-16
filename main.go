@@ -1,49 +1,50 @@
 package main
 
 import (
-	"content_pipeline/pkg/geminiai"
-	"content_pipeline/pkg/minio"
+	"content_pipeline/pkg/groq"
+	"content_pipeline/pkg/s3"
 	_ "content_pipeline/routers"
 
 	beego "github.com/beego/beego/v2/server/web"
 )
 
 func main() {
-	minioEndpoint, err := beego.AppConfig.String("app::minio_endpoint")
+	awsEndpoint, err := beego.AppConfig.String("app::aws_endpoint")
 	if err != nil {
-		panic("Minio endpoint is required")
+		panic("S3 endpoint is required")
 	}
 
-	minioAccessKey, err := beego.AppConfig.String("app::minio_access_key")
+	awsAccessKey, err := beego.AppConfig.String("app::aws_access_key")
 	if err != nil {
-		panic("Minio access key is required")
+		panic("S3 access key is required")
 	}
 
-	minioSecretKey, err := beego.AppConfig.String("app::minio_secret_key")
+	awsSecretKey, err := beego.AppConfig.String("app::aws_secret_key")
 	if err != nil {
-		panic("Minio secret key is required")
+		panic("S3 secret key is required")
 	}
 
-	minioUseSSL, err := beego.AppConfig.Bool("app::minio_use_ssl")
+	awsRegion, err := beego.AppConfig.String("app::aws_region")
 	if err != nil {
-		panic("Minio use SSL configuration is required")
+		panic("S3 region is required")
 	}
 
-	err = minio.Init(minioEndpoint, minioAccessKey, minioSecretKey, minioUseSSL)
+	err = s3.Init(awsEndpoint, awsAccessKey, awsSecretKey, awsRegion)
+
+	// Init Groq after config is loaded
+	groqAPIKey, err := beego.AppConfig.String("app::groq_api_key")
+	if err != nil || groqAPIKey == "" {
+		panic("GROQ API key is required")
+	}
+
+	groqBaseURL, err := beego.AppConfig.String("app::groq_base_url")
+	if err != nil || groqBaseURL == "" {
+		panic("GROQ base URL is required")
+	}
+
+	groq.Init(groqAPIKey, groqBaseURL)
 	if err != nil {
 		panic(err)
 	}
-
-	llm_key, err := beego.AppConfig.String("app::llm_key")
-
-	if err != nil {
-		panic("LLM API key is required")
-	}
-
-	err = geminiai.InitGeminiAIClient(llm_key)
-	if err != nil {
-		panic(err)
-	}
-
 	beego.Run()
 }

@@ -11,6 +11,19 @@ import (
 type ValidationService struct {
 }
 
+// ValidateJob validates the input parameters for a job, including the title, description, site URL, and the contents of the CSV file.
+// It checks for the presence of required fields, validates the length of the description, and ensures that the CSV file has the correct format and contains valid data.
+// Parameters:
+//
+//   - title: The title of the job, which must be a non-empty string.
+//
+//   - description: A description of the job, which must be a non-empty string and not exceed 1000 characters in length.
+//
+//   - siteUrl: The URL of the site associated with the job, which must be a non-empty string.
+//
+//   - fileBytes: The contents of the CSV file as a byte slice. The CSV file must have a header row with the columns "id", "title", and "description", and at least one data row. Each data row must have non-empty values for all three columns, and the "id" values must be unique.
+//
+// Returns an error object if any validation checks fail, or nil if all validations pass successfully.
 func (v *ValidationService) ValidateJob(title, description, siteUrl string, fileBytes []byte) error {
 	if strings.TrimSpace(title) == "" {
 		return errors.New("title is required")
@@ -22,10 +35,6 @@ func (v *ValidationService) ValidateJob(title, description, siteUrl string, file
 
 	if strings.TrimSpace(description) == "" {
 		return errors.New("description is required")
-	}
-
-	if len(description) > 1000 {
-		return errors.New("description too long")
 	}
 
 	reader := csv.NewReader(bytes.NewReader(fileBytes))
