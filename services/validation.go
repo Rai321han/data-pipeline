@@ -3,7 +3,6 @@ package services
 import (
 	"bytes"
 	"encoding/csv"
-	"errors"
 	"fmt"
 	"strings"
 )
@@ -26,22 +25,26 @@ type ValidationService struct {
 // Returns an error object if any validation checks fail, or nil if all validations pass successfully.
 func (v *ValidationService) ValidateJob(title, description, siteUrl string, fileBytes []byte) error {
 	if strings.TrimSpace(title) == "" {
-		return errors.New("title is required")
+		return NewServiceError(ErrValidation, "TITLE_REQUIRED", "title is required", nil)
 	}
 
 	if strings.TrimSpace(siteUrl) == "" {
-		return errors.New("site_url is required")
+		return NewServiceError(ErrValidation, "SITE_URL_REQUIRED", "site_url is required", nil)
 	}
 
 	if strings.TrimSpace(description) == "" {
-		return errors.New("description is required")
+		return NewServiceError(ErrValidation, "DESCRIPTION_REQUIRED", "description is required", nil)
 	}
 
 	reader := csv.NewReader(bytes.NewReader(fileBytes))
 
 	records, err := reader.ReadAll()
 	if err != nil {
-		return errors.New("invalid csv file")
+		return NewServiceError(ErrValidation, "INVALID_CSV", "invalid csv file", err)
+	}
+
+	if len(records) == 0 {
+		return NewServiceError(ErrValidation, "INVALID_CSV", "csv file is empty", nil)
 	}
 
 	header := records[0]
@@ -50,11 +53,11 @@ func (v *ValidationService) ValidateJob(title, description, siteUrl string, file
 		header[0] != "id" ||
 		header[1] != "title" ||
 		header[2] != "description" {
-		return errors.New("invalid csv headers")
+		return NewServiceError(ErrValidation, "INVALID_CSV_HEADERS", "invalid csv headers", nil)
 	}
 
 	if len(records) < 2 {
-		return errors.New("csv file must contain at least one data row")
+		return NewServiceError(ErrValidation, "CSV_DATA_REQUIRED", "csv file must contain at least one data row", nil)
 	}
 
 	ids := make(map[string]bool)
@@ -64,7 +67,7 @@ func (v *ValidationService) ValidateJob(title, description, siteUrl string, file
 		row := records[i]
 
 		if len(row) != 3 {
-			return fmt.Errorf("invalid row at line %d", i+1)
+			return NewServiceError(ErrValidation, "INVALID_CSV_ROW", fmt.Sprintf("invalid row at line %d", i+1), nil)
 		}
 
 		id := strings.TrimSpace(row[0])
@@ -72,11 +75,11 @@ func (v *ValidationService) ValidateJob(title, description, siteUrl string, file
 		desc := strings.TrimSpace(row[2])
 
 		if id == "" || title == "" || desc == "" {
-			return fmt.Errorf("empty field at line %d", i+1)
+			return NewServiceError(ErrValidation, "EMPTY_CSV_FIELD", fmt.Sprintf("empty field at line %d", i+1), nil)
 		}
 
 		if ids[id] {
-			return fmt.Errorf("duplicate id: %s", id)
+			return NewServiceError(ErrValidation, "DUPLICATE_ID", fmt.Sprintf("duplicate id: %s", id), nil)
 		}
 
 		ids[id] = true

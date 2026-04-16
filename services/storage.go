@@ -49,8 +49,12 @@ func (s *storageService) Upload(ctx context.Context, bucket, key string, data []
 		ContentType: aws.String("application/json"),
 	})
 	if err != nil {
-		fmt.Printf("Error uploading to S3: %v\n", err)
-		return fmt.Errorf("s3 put object bucket=%s key=%s: %w", bucket, key, err)
+		return NewServiceError(
+			ErrStorage,
+			"S3_UPLOAD_FAILED",
+			fmt.Sprintf("failed to upload object to bucket=%s key=%s", bucket, key),
+			err,
+		)
 	}
 
 	return nil

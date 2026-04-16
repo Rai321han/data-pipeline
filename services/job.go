@@ -37,28 +37,28 @@ type JobService struct{}
 //   - A string representing the S3 path where the input JSON was uploaded.
 //
 //   - An error object if any step of the process fails, or nil if the entire workflow completes successfully.
-func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl string, fileBytes []byte) (string, error) {
+func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl string, fileBytes []byte) error {
 	bucket, err := beego.AppConfig.String("app::bucket_name")
 	if err != nil || bucket == "" {
-		return "", errors.New("bucket name is not configured")
+		return NewServiceError(ErrConfiguration, "BUCKET_NOT_CONFIGURED", "bucket name is not configured", err)
 	}
 
 	model, err := beego.AppConfig.String("app::groq_model")
 	if err != nil || model == "" {
-		return "", errors.New("llm model is not configured")
+		return NewServiceError(ErrConfiguration, "LLM_MODEL_NOT_CONFIGURED", "llm model is not configured", err)
 	}
 
 	// Build and upload input JSON
 	data, err := s.buildInputJSON(title, description, fileBytes)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	storageService := NewStorageService(s3.S3Client)
 	inputPath := storageService.BuildInputPath(siteUrl)
 
 	if err := storageService.Upload(ctx, bucket, inputPath, data); err != nil {
-		return "", err
+		return NewServiceError(ErrStorage, "INPUT_UPLOAD_FAILED", "failed to upload input payload", err)
 	}
 
 	// Parse interpolated properties from input JSON
@@ -66,10 +66,10 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 		Properties []map[string]string `json:"properties"`
 	}
 	if err := json.Unmarshal(data, &inputData); err != nil {
-		return "", err
+		return NewServiceError(ErrSerialization, "INPUT_UNMARSHAL_FAILED", "failed to parse input payload", err)
 	}
 	if len(inputData.Properties) == 0 {
-		return "", errors.New("no properties found in CSV")
+		return NewServiceError(ErrValidation, "NO_PROPERTIES_FOUND", "no properties found in csv", nil)
 	}
 
 	temperate, err := beego.AppConfig.Float("app::temperature")
@@ -99,13 +99,13 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 			// Generate SEO content using the interpolated prompts
 			rawOutput, err := llm.GenerateRawSEO(prop["title"], prop["description"])
 			if err != nil {
-				errCh <- fmt.Errorf("raw SEO generation failed for %s: %w", prop["id"], err)
+				errCh <- NewServiceError(ErrLLM, "RAW_SEO_GENERATION_FAILED", fmt.Sprintf("raw seo generation failed for id=%s", prop["id"]), err)
 				return
 			}
 
 			rawBytes, err := json.Marshal(rawOutput)
 			if err != nil {
-				errCh <- err
+				errCh <- NewServiceError(ErrSerialization, "RAW_OUTPUT_MARSHAL_FAILED", "failed to encode raw llm output", err)
 				return
 			}
 			outputPath := storageService.BuildOutputPath(siteUrl)
@@ -113,26 +113,26 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 			// add id to the rawoutput for easier debugging
 			var rawMap map[string]any
 			if err := json.Unmarshal(rawBytes, &rawMap); err != nil {
-				errCh <- err
+				errCh <- NewServiceError(ErrSerialization, "RAW_OUTPUT_UNMARSHAL_FAILED", "failed to decode raw llm output", err)
 				return
 			}
 			rawMap["id"] = prop["id"]
 			rawBytes, err = json.Marshal(rawMap)
 			if err != nil {
-				errCh <- err
+				errCh <- NewServiceError(ErrSerialization, "RAW_OUTPUT_REMARSHAL_FAILED", "failed to encode annotated raw llm output", err)
 				return
 			}
 
 			// Step 1: save raw LLM output for debugging
 			if err := storageService.Upload(ctx, bucket, outputPath, rawBytes); err != nil {
-				errCh <- err
+				errCh <- NewServiceError(ErrStorage, "RAW_OUTPUT_UPLOAD_FAILED", "failed to upload raw llm output", err)
 				return
 			}
 
 			// Step 2: process raw output into clean SEO content
 			seoResponse, err := llm.ProcessRawSEO(rawOutput)
 			if err != nil {
-				errCh <- fmt.Errorf("processing raw SEO failed for %s: %w", prop["id"], err)
+				errCh <- NewServiceError(ErrProcessing, "RAW_SEO_PROCESSING_FAILED", fmt.Sprintf("processing raw seo failed for id=%s", prop["id"]), err)
 				return
 			}
 
@@ -144,12 +144,12 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 			}
 			artifactBytes, err := json.Marshal(artifactData)
 			if err != nil {
-				errCh <- err
+				errCh <- NewServiceError(ErrSerialization, "ARTIFACT_MARSHAL_FAILED", "failed to encode artifact payload", err)
 				return
 			}
 			artifactPath := storageService.BuildArtifactPath(siteUrl, prop["id"])
 			if err := storageService.Upload(ctx, bucket, artifactPath, artifactBytes); err != nil {
-				errCh <- err
+				errCh <- NewServiceError(ErrStorage, "ARTIFACT_UPLOAD_FAILED", "failed to upload artifact payload", err)
 			}
 		}(prop)
 	}
@@ -159,11 +159,11 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 
 	for err := range errCh {
 		if err != nil {
-			return "", err
+			return err
 		}
 	}
 
-	return inputPath, nil
+	return nil
 }
 
 func (s *JobService) buildInputJSON(title, description string, file []byte) ([]byte, error) {
@@ -171,7 +171,7 @@ func (s *JobService) buildInputJSON(title, description string, file []byte) ([]b
 
 	reader := csv.NewReader(bytes.NewReader(file))
 	if _, err := reader.Read(); err != nil {
-		return nil, err
+		return nil, NewServiceError(ErrProcessing, "CSV_HEADER_READ_FAILED", "failed to read csv header", err)
 	}
 
 	for {
@@ -180,7 +180,11 @@ func (s *JobService) buildInputJSON(title, description string, file []byte) ([]b
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, err
+			return nil, NewServiceError(ErrProcessing, "CSV_ROW_READ_FAILED", "failed to read csv row", err)
+		}
+
+		if len(record) < 3 {
+			return nil, NewServiceError(ErrProcessing, "INVALID_CSV_ROW_LENGTH", "csv row must contain id,title,description", nil)
 		}
 
 		propertyID := record[0]
@@ -201,7 +205,12 @@ func (s *JobService) buildInputJSON(title, description string, file []byte) ([]b
 		"properties": properties,
 	}
 
-	return json.Marshal(inputData)
+	data, err := json.Marshal(inputData)
+	if err != nil {
+		return nil, NewServiceError(ErrSerialization, "INPUT_MARSHAL_FAILED", "failed to encode input payload", err)
+	}
+
+	return data, nil
 }
 
 func ptr[T any](v T) *T {
