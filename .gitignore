@@ -5,3 +5,4 @@ conf/app.conf
 *.log
 *.csv
 .codex
+docker-compose.yml
