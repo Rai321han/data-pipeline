@@ -48,7 +48,6 @@ func (s *JobService) ProcessJob(ctx context.Context, title, description, siteUrl
 		return err
 	}
 
-	// Build and upload input JSON
 	data, err := s.buildInputJSON(title, description, fileBytes)
 	if err != nil {
 		return err

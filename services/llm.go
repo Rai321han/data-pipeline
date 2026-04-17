@@ -1,10 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
+	"regexp"
 	"strings"
 
 	openai "github.com/sashabaranov/go-openai"
+	"golang.org/x/net/html"
 )
 
 // SEOResponse represents the final processed SEO title and description to be returned to the client.
@@ -91,8 +94,8 @@ func (s *LLMService) generate(ctx context.Context, prompt string) (string, error
 // It performs operations such as stripping HTML tags from the title and normalizing the description into a well-formed paragraph.
 // If the processed title or description is empty after normalization, it returns a ServiceError indicating the issue.
 func (s *LLMService) ProcessRawSEO(raw RawSEOOutput) (SEOResponse, error) {
-	title := stripHTML(strings.TrimSpace(raw.RawTitle))
-	description := normalizeParagraph(strings.TrimSpace(raw.RawDescription))
+	title := cleanSEOTitle(strings.TrimSpace(raw.RawTitle))
+	description := clecleanSEODescription(raw.RawDescription)
 
 	if title == "" {
 		return SEOResponse{}, NewServiceError(ErrProcessing, "EMPTY_PROCESSED_TITLE", "processed title is empty", nil)
@@ -107,29 +110,57 @@ func (s *LLMService) ProcessRawSEO(raw RawSEOOutput) (SEOResponse, error) {
 	}, nil
 }
 
-// stripHTML removes any HTML tags from the input string and returns the plain text content.
-// It uses a simple state machine to track whether it is currently inside an HTML tag and builds the resulting string accordingly.
-func stripHTML(s string) string {
-	var result strings.Builder
-	inTag := false
-	for _, r := range s {
-		if r == '<' {
-			inTag = true
-		} else if r == '>' {
-			inTag = false
-		} else if !inTag {
-			result.WriteRune(r)
-		}
+// cleanSEOTitle takes an input string that may contain extraneous information and attempts to extract a clean SEO title.
+// It looks for the first quoted substring and returns it as the title, or if no quotes are found, it returns the input string with normalized whitespace.
+// This is a simple heuristic to handle cases where the LLM might return a title in quotes or with additional context.
+func cleanSEOTitle(input string) string {
+	var firstQuoteRe = regexp.MustCompile(`["']([^"']+)["']`)
+
+	// normalize whitespace
+	text := strings.Join(strings.Fields(input), " ")
+
+	// extract first quoted part
+	if m := firstQuoteRe.FindStringSubmatch(text); len(m) == 2 {
+		return strings.TrimSpace(m[1])
 	}
-	return strings.TrimSpace(result.String())
+
+	return strings.TrimSpace(text)
 }
 
-// normalizeParagraph takes a string and ensures it is wrapped in <p> tags, while also trimming any leading or trailing whitespace.
-// If the string already starts with <p> and ends with </p>, it will simply trim the whitespace and re-wrap it to ensure consistent formatting.
-func normalizeParagraph(s string) string {
-	s = strings.TrimSpace(s)
-	if strings.HasPrefix(s, "<p>") && strings.HasSuffix(s, "</p>") {
-		s = s[3 : len(s)-4]
+// cleanSingleP takes an input string that may contain HTML content and extracts the content of the first <p> tag it finds.
+// It returns a string that consists of the content of that <p> tag wrapped in a single <p> tag, effectively normalizing the description to a single paragraph format.
+// If no <p> tag is found, it returns an empty string. The function uses the html package to parse the input and traverse the DOM tree to find the first <p> element.
+func clecleanSEODescription(input string) string {
+	doc, err := html.Parse(strings.NewReader(input))
+	if err != nil {
+		return ""
 	}
-	return "<p>" + strings.TrimSpace(s) + "</p>"
+
+	var firstP *html.Node
+
+	var find func(*html.Node)
+	find = func(n *html.Node) {
+		if n.Type == html.ElementNode && n.Data == "p" && firstP == nil {
+			firstP = n
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			find(c)
+		}
+	}
+
+	find(doc)
+
+	if firstP == nil {
+		return ""
+	}
+
+	var buf bytes.Buffer
+	for c := firstP.FirstChild; c != nil; c = c.NextSibling {
+		html.Render(&buf, c)
+	}
+
+	content := strings.TrimSpace(buf.String())
+
+	return "<p>" + content + "</p>"
 }
