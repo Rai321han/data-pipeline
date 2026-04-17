@@ -87,7 +87,7 @@ content_pipeline/
 2. Change into the project directory.
 
 ```bash
-    cd data-pipeline/content_pipeline
+    cd data-pipeline
 ```
 
 3. Install dependencies:
